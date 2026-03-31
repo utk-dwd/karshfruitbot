@@ -4,13 +4,17 @@ const formatSelect = document.getElementById('format');
 const previewEl = document.getElementById('preview');
 const statusEl = document.getElementById('status');
 const sitePillEl = document.getElementById('site-pill');
-const botTokenInput = document.getElementById('botToken');
-const chatIdInput = document.getElementById('chatId');
-const saveBtn = document.getElementById('saveSettings');
 const sendBtn = document.getElementById('sendToTelegram');
+const openBotLink = document.getElementById('openBot');
+const requestSupportLink = document.getElementById('requestSupport');
+const statusLink = document.getElementById('statusLink');
+const statusLinkUrl = 'https://github.com/utk-dwd/karshfruitbot/blob/main/docs/ai-sites-status.md';
+const supportLinkUrl = 'https://github.com/utk-dwd/karshfruitbot/blob/main/docs/ai-site-requests.md';
 
 let conversation = null;
 let activeTabId = null;
+let botToken = '';
+let chatId = '';
 
 function setStatus(message, tone = 'muted') {
 	statusEl.textContent = message;
@@ -62,18 +66,23 @@ async function loadSettings() {
 		CHAT_ID: '',
 		DEFAULT_FORMAT: 'markdown',
 	});
-	botTokenInput.value = stored.BOT_TOKEN;
-	chatIdInput.value = stored.CHAT_ID;
+	botToken = stored.BOT_TOKEN;
+	chatId = stored.CHAT_ID;
 	formatSelect.value = stored.DEFAULT_FORMAT || 'markdown';
 }
 
-async function saveSettings() {
-	await chrome.storage.sync.set({
-		BOT_TOKEN: botTokenInput.value.trim(),
-		CHAT_ID: chatIdInput.value.trim(),
-		DEFAULT_FORMAT: formatSelect.value,
-	});
-	setStatus('Settings saved 🍍', 'ok');
+async function ensureCredentials() {
+	if (botToken && chatId) return true;
+	const token = prompt('Enter your BOT token (kept locally)');
+	const chat = token ? prompt('Enter your Telegram chat ID') : null;
+	if (!token || !chat) {
+		setStatus('BOT token and chat ID are required to send.', 'warn');
+		return false;
+	}
+	botToken = token.trim();
+	chatId = chat.trim();
+	await chrome.storage.sync.set({ BOT_TOKEN: botToken, CHAT_ID: chatId });
+	return true;
 }
 
 async function getActiveTabId() {
@@ -124,13 +133,8 @@ async function sendToTelegram() {
 		return;
 	}
 
-	const botToken = botTokenInput.value.trim();
-	const chatId = chatIdInput.value.trim();
-
-	if (!botToken || !chatId) {
-		setStatus('Set BOT token and chat ID first.', 'warn');
-		return;
-	}
+	const ready = await ensureCredentials();
+	if (!ready) return;
 
 	const fmt = formatSelect.value;
 	const content = formatConversation(conversation, fmt);
@@ -167,5 +171,23 @@ formatSelect.addEventListener('change', () => {
 	renderPreview();
 });
 
-saveBtn.addEventListener('click', saveSettings);
 sendBtn.addEventListener('click', sendToTelegram);
+
+// Deep link to the bot for chat ID capture (/start register flow placeholder)
+openBotLink.addEventListener('click', (e) => {
+	e.preventDefault();
+	const url = 'https://t.me/karshfruitbot?start=register';
+	chrome.tabs.create({ url });
+});
+
+// Request site support (opens docs page; could be replaced with a webhook endpoint)
+requestSupportLink.addEventListener('click', (e) => {
+	e.preventDefault();
+	chrome.tabs.create({ url: supportLinkUrl });
+});
+
+// Optional: status page for approved/pending hosts
+statusLink?.addEventListener('click', (e) => {
+	e.preventDefault();
+	chrome.tabs.create({ url: statusLinkUrl });
+});

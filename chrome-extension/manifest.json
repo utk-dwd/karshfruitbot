@@ -1,0 +1,47 @@
+{
+	"name": "karshfruitbot – AI Chat Exporter",
+	"description": "Scrape AI conversations, preview them, and send to your karshfruit Telegram bot in one click.",
+	"manifest_version": 3,
+	"version": "1.0.0",
+	"action": {
+		"default_popup": "popup.html",
+		"default_title": "karshfruitbot exporter",
+		"default_icon": {
+			"16": "assets/icon16.png",
+			"48": "assets/icon48.png",
+			"128": "assets/icon128.png"
+		}
+	},
+	"background": {
+		"service_worker": "background.js",
+		"type": "module"
+	},
+	"permissions": ["activeTab", "storage", "scripting"],
+	"host_permissions": [
+		"https://chat.openai.com/*",
+		"https://claude.ai/*",
+		"https://www.perplexity.ai/*",
+		"https://gemini.google.com/*",
+		"https://grok.*/*",
+		"https://chat.deepseek.com/*"
+	],
+	"content_scripts": [
+		{
+			"matches": [
+				"https://chat.openai.com/*",
+				"https://claude.ai/*",
+				"https://www.perplexity.ai/*",
+				"https://gemini.google.com/*",
+				"https://grok.*/*",
+				"https://chat.deepseek.com/*"
+			],
+			"js": ["content/content.js"],
+			"run_at": "document_idle"
+		}
+	],
+	"icons": {
+		"16": "assets/icon16.png",
+		"48": "assets/icon48.png",
+		"128": "assets/icon128.png"
+	}
+}

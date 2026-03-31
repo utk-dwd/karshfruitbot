@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>karshfruitbot – exporter</title>
+		<link
+			rel="preconnect"
+			href="https://fonts.googleapis.com"
+		/>
+		<link
+			rel="preconnect"
+			href="https://fonts.gstatic.com"
+			crossorigin
+		/>
+		<link
+			href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap"
+			rel="stylesheet"
+		/>
+		<style>
+			:root {
+				--bg: linear-gradient(135deg, #fdf4ff, #fff8ed);
+				--card: rgba(255, 255, 255, 0.82);
+				--shadow: 0 10px 40px rgba(255, 163, 71, 0.25);
+				--primary: #ff7f50;
+				--accent: #7bd88f;
+				--text: #1f1c24;
+				--muted: #6b6474;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				min-width: 360px;
+				font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+				background: var(--bg);
+				color: var(--text);
+				overflow: hidden;
+			}
+
+			.floating {
+				position: fixed;
+				inset: 0;
+				pointer-events: none;
+				overflow: hidden;
+				z-index: 0;
+			}
+
+			.bubble {
+				position: absolute;
+				width: 120px;
+				height: 120px;
+				background: radial-gradient(circle at 30% 30%, #ffe8d9, #ffc3a0);
+				border-radius: 50%;
+				filter: blur(16px);
+				animation: drift 14s ease-in-out infinite alternate;
+			}
+
+			.bubble:nth-child(2) {
+				width: 90px;
+				height: 90px;
+				right: -30px;
+				top: 10px;
+				background: radial-gradient(circle at 30% 30%, #d9ffef, #a0ffd5);
+				animation-duration: 12s;
+			}
+
+			.bubble:nth-child(3) {
+				width: 140px;
+				height: 140px;
+				left: 40px;
+				bottom: -50px;
+				background: radial-gradient(circle at 30% 30%, #ffe3f3, #ffb5dc);
+				animation-duration: 16s;
+			}
+
+			@keyframes drift {
+				from {
+					transform: translateY(0) translateX(0);
+				}
+				to {
+					transform: translateY(-20px) translateX(12px);
+				}
+			}
+
+			.card {
+				position: relative;
+				z-index: 1;
+				margin: 16px;
+				padding: 16px;
+				background: var(--card);
+				border-radius: 18px;
+				box-shadow: var(--shadow);
+				backdrop-filter: blur(12px);
+				border: 1px solid rgba(255, 255, 255, 0.6);
+			}
+
+			header {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				margin-bottom: 12px;
+			}
+
+			.logo {
+				width: 52px;
+				height: 52px;
+				border-radius: 50%;
+				background: #fff;
+				box-shadow: inset 0 0 0 6px rgba(255, 255, 255, 0.6), 0 6px 16px rgba(255, 127, 80, 0.3);
+				overflow: hidden;
+				display: grid;
+				place-items: center;
+			}
+
+			.logo img {
+				width: 80%;
+				height: 80%;
+				object-fit: contain;
+			}
+
+			h1 {
+				margin: 0;
+				font-size: 16px;
+				letter-spacing: -0.02em;
+			}
+
+			.chip-row {
+				display: flex;
+				gap: 8px;
+				margin-bottom: 12px;
+			}
+
+			.chip {
+				padding: 8px 12px;
+				border-radius: 999px;
+				font-size: 12px;
+				background: rgba(255, 127, 80, 0.1);
+				color: var(--primary);
+				border: 1px solid rgba(255, 127, 80, 0.25);
+				display: inline-flex;
+				gap: 6px;
+				align-items: center;
+			}
+
+			label {
+				display: block;
+				margin: 10px 0 6px;
+				font-weight: 600;
+				font-size: 12px;
+				color: var(--muted);
+			}
+
+			select,
+			input {
+				width: 100%;
+				padding: 12px;
+				border-radius: 14px;
+				border: 1px solid rgba(0, 0, 0, 0.06);
+				background: rgba(255, 255, 255, 0.85);
+				font-size: 13px;
+				outline: none;
+				transition: transform 140ms ease, box-shadow 140ms ease;
+			}
+
+			select:focus,
+			input:focus {
+				transform: translateY(-1px);
+				box-shadow: 0 10px 20px rgba(255, 127, 80, 0.15);
+			}
+
+			.row {
+				display: flex;
+				gap: 8px;
+			}
+
+			textarea,
+			pre {
+				width: 100%;
+				min-height: 140px;
+				border: 1px solid rgba(0, 0, 0, 0.05);
+				border-radius: 14px;
+				background: rgba(255, 255, 255, 0.9);
+				padding: 12px;
+				font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+				font-size: 12px;
+				white-space: pre-wrap;
+				overflow: auto;
+			}
+
+			.btn-row {
+				display: flex;
+				gap: 10px;
+				margin-top: 12px;
+			}
+
+			button {
+				flex: 1;
+				padding: 12px 14px;
+				border: none;
+				border-radius: 16px;
+				font-weight: 700;
+				font-size: 13px;
+				cursor: pointer;
+				transition: transform 140ms ease, box-shadow 160ms ease;
+			}
+
+			button:active {
+				transform: translateY(1px) scale(0.995);
+			}
+
+			.btn-secondary {
+				background: #fff;
+				color: var(--primary);
+				border: 1px solid rgba(255, 127, 80, 0.25);
+				box-shadow: 0 10px 20px rgba(0, 0, 0, 0.04);
+			}
+
+			.btn-primary {
+				background: radial-gradient(circle at 20% 20%, #ffa559, #ff7f50);
+				color: #fff;
+				box-shadow: 0 14px 30px rgba(255, 127, 80, 0.35);
+			}
+
+			.status {
+				margin-top: 10px;
+				font-size: 12px;
+				color: var(--muted);
+			}
+
+			.pill {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				padding: 6px 10px;
+				border-radius: 999px;
+				background: rgba(123, 216, 143, 0.14);
+				color: #2b7a44;
+				border: 1px solid rgba(123, 216, 143, 0.35);
+				font-size: 12px;
+				margin-top: 6px;
+			}
+
+			.tiny-note {
+				font-size: 11px;
+				color: var(--muted);
+				margin-top: 8px;
+				line-height: 1.4;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="floating">
+			<div class="bubble"></div>
+			<div class="bubble"></div>
+			<div class="bubble"></div>
+		</div>
+
+		<div class="card">
+			<header>
+				<div class="logo">
+					<img src="assets/KarshFruitBot_Logo.png" alt="karshfruitbot" />
+				</div>
+				<div>
+					<h1>karshfruitbot exporter</h1>
+					<div class="chip-row">
+						<span class="chip">🍑 playful</span>
+						<span class="chip">🍋 minimal</span>
+						<span class="chip">🍏 floaty</span>
+					</div>
+				</div>
+			</header>
+
+			<div class="pill" id="site-pill">Detecting page…</div>
+
+			<label for="format">Format</label>
+			<select id="format">
+				<option value="text">Plain text</option>
+				<option value="markdown">Markdown</option>
+				<option value="json">JSON</option>
+			</select>
+
+			<label for="preview">Preview</label>
+			<pre id="preview">Waiting for conversation…</pre>
+
+			<label>Telegram config</label>
+			<div class="row">
+				<input id="botToken" type="password" placeholder="BOT token" />
+				<input id="chatId" type="text" placeholder="Chat ID" />
+			</div>
+			<div class="tiny-note">
+				Stored in Chrome sync storage and only used locally to call Telegram.
+			</div>
+
+			<div class="btn-row">
+				<button class="btn-secondary" id="saveSettings">Save settings</button>
+				<button class="btn-primary" id="sendToTelegram">Send to Telegram</button>
+			</div>
+
+			<div class="status" id="status">Ready.</div>
+		</div>
+
+		<script src="popup.js" type="module"></script>
+	</body>
+</html>

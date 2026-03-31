@@ -4,6 +4,19 @@ function clean(text) {
 	return (text || '').replace(/\s+/g, ' ').trim();
 }
 
+const HOST_SOURCE_MAP = {
+	'chatgpt.com': 'chatgpt',
+	'chat.openai.com': 'chatgpt',
+	'chat.com': 'chatgpt',
+
+	'claude.ai': 'claude',
+
+	'perplexity.ai': 'perplexity',
+	'www.perplexity.ai': 'perplexity',
+
+	'gemini.google.com': 'gemini',
+};
+
 function scrapeChatGPT() {
 	const nodes = document.querySelectorAll('[data-message-author-role]');
 	const messages = Array.from(nodes).map((el) => ({
@@ -59,14 +72,22 @@ function scrapeDeepSeek() {
 }
 
 function identify() {
-	const host = location.hostname;
-	if (host.includes('chat.openai.com')) return { source: 'chatgpt', scraper: scrapeChatGPT };
-	if (host.includes('claude.ai')) return { source: 'claude', scraper: scrapeClaude };
-	if (host.includes('perplexity.ai')) return { source: 'perplexity', scraper: scrapePerplexity };
-	if (host.includes('gemini.google.com')) return { source: 'gemini', scraper: scrapeGemini };
-	if (host.includes('grok.')) return { source: 'grok', scraper: scrapeGrok };
-	if (host.includes('deepseek.com')) return { source: 'deepseek', scraper: scrapeDeepSeek };
-	return null;
+	const host = location.hostname.toLowerCase();
+	const source = HOST_SOURCE_MAP[host];
+	if (!source) return null;
+
+	switch (source) {
+		case 'chatgpt':
+			return { source, scraper: scrapeChatGPT };
+		case 'claude':
+			return { source, scraper: scrapeClaude };
+		case 'perplexity':
+			return { source, scraper: scrapePerplexity };
+		case 'gemini':
+			return { source, scraper: scrapeGemini };
+		default:
+			return null;
+	}
 }
 
 function buildConversation(source, messages) {

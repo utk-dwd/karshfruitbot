@@ -18,22 +18,24 @@
 	},
 	"permissions": ["activeTab", "storage", "scripting"],
 	"host_permissions": [
+		"https://chatgpt.com/*",
 		"https://chat.openai.com/*",
+		"https://chat.com/*",
 		"https://claude.ai/*",
 		"https://www.perplexity.ai/*",
-		"https://gemini.google.com/*",
-		"https://grok.com/*",
-		"https://chat.deepseek.com/*"
+		"https://perplexity.ai/*",
+		"https://gemini.google.com/*"
 	],
 	"content_scripts": [
 		{
 			"matches": [
+				"https://chatgpt.com/*",
 				"https://chat.openai.com/*",
+				"https://chat.com/*",
 				"https://claude.ai/*",
 				"https://www.perplexity.ai/*",
-				"https://gemini.google.com/*",
-				"https://grok.com/*",
-				"https://chat.deepseek.com/*"
+				"https://perplexity.ai/*",
+				"https://gemini.google.com/*"
 			],
 			"js": ["content/content.js"],
 			"run_at": "document_idle"

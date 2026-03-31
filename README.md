@@ -197,4 +197,4 @@ type Conversation = {
 
 ## 6) License
 
-Add your preferred license (MIT, Apache-2.0, etc.).
+MIT License © 2026 Utkarsh Dwivedi. See [`LICENSE`](./LICENSE) for full terms.

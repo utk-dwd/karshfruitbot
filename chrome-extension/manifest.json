@@ -22,7 +22,7 @@
 		"https://claude.ai/*",
 		"https://www.perplexity.ai/*",
 		"https://gemini.google.com/*",
-		"https://grok.*/*",
+		"https://grok.com/*",
 		"https://chat.deepseek.com/*"
 	],
 	"content_scripts": [
@@ -32,7 +32,7 @@
 				"https://claude.ai/*",
 				"https://www.perplexity.ai/*",
 				"https://gemini.google.com/*",
-				"https://grok.*/*",
+				"https://grok.com/*",
 				"https://chat.deepseek.com/*"
 			],
 			"js": ["content/content.js"],

@@ -1,69 +1,164 @@
 // background.js - MV3 service worker for karshfruitbot exporter
 
-const TELEGRAM_API_BASE = 'https://api.telegram.org';
+const DEFAULT_EXTENSION_API_URL = 'http://localhost:8787/api/extension/send';
+const FALLBACK_EXTENSION_API_URL = 'http://127.0.0.1:8787/api/extension/send';
 
-async function getSecrets() {
-  const { BOT_TOKEN = '', CHAT_ID = '' } = await chrome.storage.sync.get([
-    'BOT_TOKEN',
-    'CHAT_ID',
-  ]);
-  return { BOT_TOKEN, CHAT_ID };
+function buildLinkStatusUrl(sendUrl, browserSessionId) {
+  const base = new URL(sendUrl);
+  base.pathname = '/api/extension/link-status';
+  base.searchParams.set('browserSessionId', browserSessionId);
+  return base.toString();
 }
 
-async function sendSmallText(botToken, chatId, content) {
-  const body = new URLSearchParams({
-    chat_id: chatId,
-    text: content,
-  });
+async function getApiUrl() {
+  const { EXTENSION_API_URL = DEFAULT_EXTENSION_API_URL } = await chrome.storage.sync.get(['EXTENSION_API_URL']);
+  return EXTENSION_API_URL || DEFAULT_EXTENSION_API_URL;
+}
 
-  const res = await fetch(`${TELEGRAM_API_BASE}/bot${botToken}/sendMessage`, {
+async function hasOriginPermission(url) {
+  try {
+    const u = new URL(url);
+    return await chrome.permissions.contains({ origins: [`${u.origin}/*`] });
+  } catch (_) {
+    return false;
+  }
+}
+
+async function postToEndpoint(endpoint, payload) {
+  const res = await fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`sendMessage failed (${res.status})`);
-  return res.json();
-}
 
-async function sendDocument(botToken, chatId, content, fileName) {
-  const form = new FormData();
-  form.append('chat_id', chatId);
-  form.append(
-    'document',
-    new Blob([content], { type: 'text/plain' }),
-    fileName
-  );
-
-  const res = await fetch(`${TELEGRAM_API_BASE}/bot${botToken}/sendDocument`, {
-    method: 'POST',
-    body: form,
-  });
-  if (!res.ok) throw new Error(`sendDocument failed (${res.status})`);
-  return res.json();
-}
-
-async function handleSend({ format, content, fileName }) {
-  const { BOT_TOKEN, CHAT_ID } = await getSecrets();
-  if (!BOT_TOKEN || !CHAT_ID) {
-    throw new Error('BOT_TOKEN or CHAT_ID missing in storage');
+  let body = null;
+  try {
+    body = await res.json();
+  } catch (_) {
+    body = null;
   }
 
-  const shouldUpload = format === 'markdown' || format === 'json' || content.length > 3500;
-
-  if (shouldUpload) {
-    return sendDocument(BOT_TOKEN, CHAT_ID, content, fileName);
+  if (!res.ok || body?.ok === false) {
+    throw new Error(body?.error || `Server send failed (${res.status})`);
   }
-  return sendSmallText(BOT_TOKEN, CHAT_ID, content);
+
+  return body;
+}
+
+async function getLinkStatus(endpoint, browserSessionId) {
+  const url = buildLinkStatusUrl(endpoint, browserSessionId);
+  const res = await fetch(url, { method: 'GET' });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch (_) {
+    body = null;
+  }
+  if (!res.ok || body?.ok === false) {
+    throw new Error(body?.error || `Link status check failed (${res.status})`);
+  }
+  return { linked: Boolean(body?.linked) };
+}
+
+async function handleSend({ format, content, fileName, browserSessionId, chatId }) {
+  const endpoint = await getApiUrl();
+  const normalizedSessionId = String(browserSessionId || '').trim();
+  const normalizedChatId = String(chatId || '').trim();
+
+  if (!normalizedSessionId && !normalizedChatId) {
+    throw new Error('Missing browser session link. Tap 🤖 and press Start in Telegram once.');
+  }
+
+  const payload = {
+    format,
+    content,
+    fileName,
+    browserSessionId: normalizedSessionId,
+    chatId: normalizedChatId,
+  };
+
+  const candidates = [endpoint];
+  if (endpoint !== FALLBACK_EXTENSION_API_URL) {
+    candidates.push(FALLBACK_EXTENSION_API_URL);
+  }
+
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    try {
+      const hasPermission = await hasOriginPermission(candidate);
+      if (!hasPermission) {
+        throw new Error(
+          `Missing extension permission for ${new URL(candidate).origin}. Reload extension to apply updated manifest host permissions.`
+        );
+      }
+
+      return await postToEndpoint(candidate, payload);
+    } catch (err) {
+      lastError = err;
+      if (String(err?.message || '').includes('Missing extension permission')) {
+        break;
+      }
+    }
+  }
+
+  const message = String(lastError?.message || 'Failed to reach local server');
+  if (message.includes('Failed to fetch')) {
+    throw new Error(
+      `Cannot reach local API. Ensure backend is running and extension API is available at ${endpoint} (or ${FALLBACK_EXTENSION_API_URL}), then reload extension.`
+    );
+  }
+
+  throw lastError;
+}
+
+async function handleCheckLink({ browserSessionId }) {
+  const endpoint = await getApiUrl();
+  const normalizedSessionId = String(browserSessionId || '').trim();
+  if (!normalizedSessionId) {
+    return { linked: false };
+  }
+
+  const candidates = [endpoint];
+  if (endpoint !== FALLBACK_EXTENSION_API_URL) {
+    candidates.push(FALLBACK_EXTENSION_API_URL);
+  }
+
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      const hasPermission = await hasOriginPermission(candidate);
+      if (!hasPermission) {
+        throw new Error(
+          `Missing extension permission for ${new URL(candidate).origin}. Reload extension to apply updated manifest host permissions.`
+        );
+      }
+      return await getLinkStatus(candidate, normalizedSessionId);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('Unable to check link status');
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'SEND_TO_TELEGRAM') {
     handleSend(message)
-      .then(() => sendResponse({ ok: true }))
+      .then((result) => sendResponse({ ok: true, ...result }))
       .catch((err) => {
         console.error('SendToTelegram error', err);
         sendResponse({ ok: false, error: err.message });
       });
     return true; // keep channel alive
+  }
+
+  if (message?.type === 'CHECK_LINK_STATUS') {
+    handleCheckLink(message)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => {
+        console.error('CheckLinkStatus error', err);
+        sendResponse({ ok: false, error: err.message });
+      });
+    return true;
   }
 });

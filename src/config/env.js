@@ -14,5 +14,7 @@ for (const key of required) {
 module.exports = {
   telegramToken: process.env.TELEGRAM_BOT_TOKEN,
   geminiApiKey: process.env.GEMINI_API_KEY,
+  telegramDefaultChatId: process.env.TELEGRAM_DEFAULT_CHAT_ID || '',
+  extensionApiPort: Number(process.env.EXTENSION_API_PORT || 8787),
   nodeEnv: process.env.NODE_ENV || 'development',
 };

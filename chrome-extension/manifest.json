@@ -18,6 +18,8 @@
 	},
 	"permissions": ["activeTab", "storage", "scripting"],
 	"host_permissions": [
+		"http://localhost:8787/*",
+		"http://127.0.0.1:8787/*",
 		"https://chatgpt.com/*",
 		"https://chat.openai.com/*",
 		"https://chat.com/*",

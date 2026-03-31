@@ -13,8 +13,68 @@ const supportLinkUrl = 'https://github.com/utk-dwd/karshfruitbot/blob/main/docs/
 
 let conversation = null;
 let activeTabId = null;
-let botToken = '';
-let chatId = '';
+let browserSessionId = '';
+
+function generateBrowserSessionId() {
+	const rand = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^a-zA-Z0-9_-]/g, '');
+	return `kb_${rand}`;
+}
+
+async function ensureBrowserSessionId() {
+	if (browserSessionId) return browserSessionId;
+	const stored = await chrome.storage.sync.get({ BROWSER_SESSION_ID: '' });
+	browserSessionId = stored.BROWSER_SESSION_ID || generateBrowserSessionId();
+	await chrome.storage.sync.set({ BROWSER_SESSION_ID: browserSessionId });
+	return browserSessionId;
+}
+
+function getTelegramStartUrl(sessionId) {
+	return `https://t.me/karshfruitbot?start=${encodeURIComponent(sessionId)}`;
+}
+
+async function openTelegramForSession(sessionId) {
+	const url = getTelegramStartUrl(sessionId);
+	await chrome.tabs.create({ url });
+}
+
+async function checkLinkStatus(sessionId) {
+	const result = await chrome.runtime.sendMessage({
+		type: 'CHECK_LINK_STATUS',
+		browserSessionId: sessionId,
+	});
+	if (!result?.ok) {
+		throw new Error(result?.error || 'Unable to check link status');
+	}
+	return Boolean(result.linked);
+}
+
+async function sendExport({ fmt, content, fileName, sessionId }) {
+	const result = await chrome.runtime.sendMessage({
+		type: 'SEND_TO_TELEGRAM',
+		format: fmt,
+		content,
+		fileName,
+		browserSessionId: sessionId,
+	});
+
+	if (!result?.ok) {
+		throw new Error(result?.error || 'Unknown error');
+	}
+
+	return result;
+}
+
+async function waitForLinkAndSend(payload) {
+	const maxChecks = 15;
+	for (let i = 0; i < maxChecks; i++) {
+		await new Promise((resolve) => setTimeout(resolve, 2000));
+		const linked = await checkLinkStatus(payload.sessionId);
+		if (linked) {
+			return sendExport(payload);
+		}
+	}
+	throw new Error('Linking timeout. Press Start in Telegram and try Send again.');
+}
 
 function setStatus(message, tone = 'muted') {
 	statusEl.textContent = message;
@@ -62,27 +122,10 @@ function renderPreview() {
 
 async function loadSettings() {
 	const stored = await chrome.storage.sync.get({
-		BOT_TOKEN: '',
-		CHAT_ID: '',
 		DEFAULT_FORMAT: 'markdown',
 	});
-	botToken = stored.BOT_TOKEN;
-	chatId = stored.CHAT_ID;
 	formatSelect.value = stored.DEFAULT_FORMAT || 'markdown';
-}
-
-async function ensureCredentials() {
-	if (botToken && chatId) return true;
-	const token = prompt('Enter your BOT token (kept locally)');
-	const chat = token ? prompt('Enter your Telegram chat ID') : null;
-	if (!token || !chat) {
-		setStatus('BOT token and chat ID are required to send.', 'warn');
-		return false;
-	}
-	botToken = token.trim();
-	chatId = chat.trim();
-	await chrome.storage.sync.set({ BOT_TOKEN: botToken, CHAT_ID: chatId });
-	return true;
+	await ensureBrowserSessionId();
 }
 
 async function getActiveTabId() {
@@ -133,30 +176,35 @@ async function sendToTelegram() {
 		return;
 	}
 
-	const ready = await ensureCredentials();
-	if (!ready) return;
-
 	const fmt = formatSelect.value;
 	const content = formatConversation(conversation, fmt);
 	const fileName = deriveFileName(conversation, fmt);
+	const sessionId = await ensureBrowserSessionId();
 
 	try {
-		setStatus('Sending to Telegram…');
-		const result = await chrome.runtime.sendMessage({
-			type: 'SEND_TO_TELEGRAM',
-			format: fmt,
-			content,
-			fileName,
-		});
+		let result;
+		const linked = await checkLinkStatus(sessionId);
+		if (!linked) {
+			setStatus('Opening Telegram… press Start to link this browser.', 'warn');
+			await openTelegramForSession(sessionId);
+			result = await waitForLinkAndSend({ fmt, content, fileName, sessionId });
+		} else {
+			setStatus('Sending to Telegram…');
+			result = await sendExport({ fmt, content, fileName, sessionId });
+		}
 
 		if (result?.ok) {
-			setStatus('Sent! Check Telegram 🍓', 'ok');
-		} else {
-			throw new Error(result?.error || 'Unknown error');
+			const deliveryMode = result?.deliveredAs ? ` as ${result.deliveredAs}` : '';
+			setStatus(`Sent${deliveryMode}! Check Telegram 🍓`, 'ok');
 		}
 	} catch (err) {
 		console.error('Send error', err);
-		setStatus(`Send failed: ${err.message}`, 'warn');
+		const message = String(err?.message || 'Unknown error');
+		if (message.toLowerCase().includes('no linked telegram chat')) {
+			setStatus('Press Start in Telegram, then click Send again.', 'warn');
+		} else {
+			setStatus(`Send failed: ${message}`, 'warn');
+		}
 	}
 }
 
@@ -176,8 +224,9 @@ sendBtn.addEventListener('click', sendToTelegram);
 // Deep link to the bot for chat ID capture (/start register flow placeholder)
 openBotLink.addEventListener('click', (e) => {
 	e.preventDefault();
-	const url = 'https://t.me/karshfruitbot?start=register';
-	chrome.tabs.create({ url });
+	ensureBrowserSessionId().then((sessionId) => {
+		openTelegramForSession(sessionId);
+	});
 });
 
 // Request site support (opens docs page; could be replaced with a webhook endpoint)

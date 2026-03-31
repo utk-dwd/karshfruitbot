@@ -13,7 +13,15 @@ const userState = new Map();
 /**
  * Wire karshfruitbot behaviour into the main Telegraf bot instance.
  */
-function registerKarshfruit(bot) {
+function extractStartPayload(ctx) {
+  const text = ctx?.message?.text || '';
+  const parts = text.trim().split(/\s+/);
+  return parts.length > 1 ? parts.slice(1).join(' ') : '';
+}
+
+function registerKarshfruit(bot, deps = {}) {
+  const registerBrowserLink = deps.registerBrowserLink || (() => false);
+
   function mainMenuKeyboard() {
     // Add more buttons in the future when you add new features.
     return Markup.keyboard([
@@ -22,14 +30,33 @@ function registerKarshfruit(bot) {
     ]).resize();
   }
 
+  function sendChatId(ctx) {
+    return ctx.reply(`Your chat ID: ${ctx.chat.id}`);
+  }
+
   // /start for karshfruitbot (main entry for users)
   bot.start((ctx) => {
     userState.delete(ctx.from.id);
+
+    const payload = extractStartPayload(ctx);
+    if (payload) {
+      const linked = registerBrowserLink(payload, ctx.chat.id);
+      if (linked) {
+        return ctx.reply(
+          '✅ Browser linked successfully. You can return to the extension and send exports now.',
+          mainMenuKeyboard()
+        );
+      }
+    }
+
     return ctx.reply(
-      'karshfruitbot online.\n\nChoose a mode from the tray below:',
+      'karshfruitbot online.\n\nChoose a mode from the tray below:\n- /chatid to see your chat ID',
       mainMenuKeyboard()
     );
   });
+
+  // /chatid helper to surface chat ID without checking logs
+  bot.command('chatid', (ctx) => sendChatId(ctx));
 
   // Tray button: Markdown Formatter
   bot.hears('📝 Markdown Formatter', (ctx) => {
@@ -47,12 +74,15 @@ function registerKarshfruit(bot) {
     return ctx.reply(
       'karshfruitbot modes:\n' +
         '📝 Markdown Formatter – paste any messy text and get a `.md` file back.\n\n' +
-        'Use /start anytime to see the tray again.'
+        'Use /start anytime to see the tray again.\n' +
+        'Need your chat ID? Send /chatid.'
     );
   });
 
   // Catch generic text and route based on state
   bot.on('text', async (ctx) => {
+    console.log('Telegram chat id:', ctx.chat.id);
+
     const userId = ctx.from.id;
     const mode = userState.get(userId);
 

@@ -4,6 +4,10 @@ function clean(text) {
 	return (text || '').replace(/\s+/g, ' ').trim();
 }
 
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const HOST_SOURCE_MAP = {
 	'chatgpt.com': 'chatgpt',
 	'chat.openai.com': 'chatgpt',
@@ -17,58 +21,182 @@ const HOST_SOURCE_MAP = {
 	'gemini.google.com': 'gemini',
 };
 
-function scrapeChatGPT() {
-	const nodes = document.querySelectorAll('[data-message-author-role]');
-	const messages = Array.from(nodes).map((el) => ({
-		role: el.getAttribute('data-message-author-role') === 'assistant' ? 'assistant' : 'user',
-		text: clean(el.innerText),
-	}));
-	return messages.filter((m) => m.text);
+// Wait for SPA-rendered content to appear
+function waitForContent(selector, timeout = 5000) {
+	return new Promise((resolve, reject) => {
+		if (document.querySelector(selector)) return resolve();
+		const observer = new MutationObserver(() => {
+			if (document.querySelector(selector)) {
+				observer.disconnect();
+				resolve();
+			}
+		});
+		observer.observe(document.body, { childList: true, subtree: true });
+		setTimeout(() => {
+			observer.disconnect();
+			reject(new Error('timeout'));
+		}, timeout);
+	});
 }
 
-function scrapeClaude() {
-	const nodes = document.querySelectorAll('[data-testid="chatMessage"], [data-testid="message"]');
-	const messages = Array.from(nodes).map((el) => {
-		const role = el.querySelector('img[alt^="User"]') ? 'user' : 'assistant';
-		return { role, text: clean(el.innerText) };
+// ─────────────────────────────
+// ChatGPT
+// ─────────────────────────────
+function extractChatGPT() {
+	const turns = document.querySelectorAll('article[class*="group/turn-messages"], [data-message-author-role]');
+	const messages = [];
+	turns.forEach((turn) => {
+		const roleAttr = turn.getAttribute('data-message-author-role');
+		const role = roleAttr === 'assistant' ? 'assistant' : roleAttr === 'user' ? 'user' : turn.querySelector('.user-message-bubble-color') ? 'user' : 'assistant';
+		const text = clean(turn.innerText);
+		if (text) messages.push({ role, text });
 	});
-	return messages.filter((m) => m.text);
+	return messages;
 }
 
-function scrapePerplexity() {
-	const nodes = document.querySelectorAll('[data-testid="chat-message"]');
-	const messages = Array.from(nodes).map((el) => {
-		const role = el.textContent?.includes('Follow-up') ? 'assistant' : 'assistant';
-		return { role, text: clean(el.innerText) };
+// ─────────────────────────────
+// Claude
+// ─────────────────────────────
+function extractClaude() {
+	const humanTurns = document.querySelectorAll(
+		'[' +
+			'data-testid="human-turn"], ' +
+			'[data-testid*="human-turn"], ' +
+			'[data-testid="user-message"], ' +
+			'[data-testid*="user-message"]'
+	);
+	const aiTurns = document.querySelectorAll(
+		'[' +
+			'data-testid="ai-turn"], ' +
+			'[data-testid*="ai-turn"], ' +
+			'[data-testid="assistant-message"], ' +
+			'[data-testid*="assistant-message"]'
+	);
+	const allTurns = [
+		...Array.from(humanTurns).map((el) => ({ role: 'user', el })),
+		...Array.from(aiTurns).map((el) => ({ role: 'assistant', el })),
+	].sort((a, b) => {
+		const pos = a.el.compareDocumentPosition(b.el);
+		return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
 	});
-	return messages.filter((m) => m.text);
+
+	const messages = [];
+	allTurns.forEach(({ role, el }) => {
+		const text = clean(el.innerText);
+		if (text) messages.push({ role, text });
+	});
+
+	if (messages.length > 0) return messages;
+
+	// Fallback: direct message nodes seen on some Claude builds
+	const directUserMessages = document.querySelectorAll('[data-testid="user-message"], [data-testid*="user-message"]');
+	const directAssistantMessages = document.querySelectorAll('[data-testid="assistant-message"], [data-testid*="assistant-message"]');
+	const directTurns = [
+		...Array.from(directUserMessages).map((el) => ({ role: 'user', el })),
+		...Array.from(directAssistantMessages).map((el) => ({ role: 'assistant', el })),
+	].sort((a, b) => {
+		const pos = a.el.compareDocumentPosition(b.el);
+		return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+	});
+
+	directTurns.forEach(({ role, el }) => {
+		const text = clean(el.innerText);
+		if (text) messages.push({ role, text });
+	});
+
+	return messages;
 }
 
-function scrapeGemini() {
-	const nodes = document.querySelectorAll('div[role="listitem"]');
-	const messages = Array.from(nodes).map((el) => {
-		const role = el.innerText?.startsWith('You') ? 'user' : 'assistant';
-		return { role, text: clean(el.innerText.replace(/^You\n/, '')) };
-	});
-	return messages.filter((m) => m.text);
+// ─────────────────────────────
+// Gemini
+// ─────────────────────────────
+function extractGemini() {
+	const messages = [];
+	const turns = document.querySelectorAll('chat-turn');
+
+	if (turns.length > 0) {
+		turns.forEach((turn) => {
+			const userEl = turn.querySelector('user-query .query-text, user-query, [data-user-query]');
+			const modelEl = turn.querySelector('model-response .markdown, model-response message-content, model-response, [data-model-response]');
+			if (userEl) messages.push({ role: 'user', text: clean(userEl.innerText) });
+			if (modelEl) messages.push({ role: 'assistant', text: clean(modelEl.innerText) });
+		});
+		return messages;
+	}
+
+	// fallback if custom elements not yet rendered
+	const userMsgs = document.querySelectorAll('user-query');
+	const modelMsgs = document.querySelectorAll('model-response');
+	userMsgs.forEach((el) => messages.push({ role: 'user', text: clean(el.innerText) }));
+	modelMsgs.forEach((el) => messages.push({ role: 'assistant', text: clean(el.innerText) }));
+	return messages;
 }
 
-function scrapeGrok() {
-	const nodes = document.querySelectorAll('article');
-	const messages = Array.from(nodes).map((el) => {
-		const role = el.querySelector('svg[aria-label="User"]') ? 'user' : 'assistant';
-		return { role, text: clean(el.innerText) };
-	});
-	return messages.filter((m) => m.text);
-}
+// ─────────────────────────────
+// Perplexity
+// ─────────────────────────────
+function extractPerplexity() {
+	const messages = [];
+	const qaBlocks = document.querySelectorAll('[data-testid="qa-block"]');
+	if (qaBlocks.length > 0) {
+		qaBlocks.forEach((block) => {
+			const query = block.querySelector('[data-testid="query"], p.break-words, h1, h2');
+			const answer = block.querySelector('[data-testid="answer"], .prose');
+			if (query) messages.push({ role: 'user', text: clean(query.innerText) });
+			if (answer) messages.push({ role: 'assistant', text: clean(answer.innerText) });
+		});
+		return messages;
+	}
 
-function scrapeDeepSeek() {
-	const nodes = document.querySelectorAll('[data-role], .message');
-	const messages = Array.from(nodes).map((el) => {
-		const role = el.getAttribute('data-role') || 'assistant';
-		return { role: role === 'user' ? 'user' : 'assistant', text: clean(el.innerText) };
+	// Some builds expose query/answer data-testid without qa-block wrapper
+	const queries = document.querySelectorAll('[data-testid="query"], [data-testid*="query"]');
+	const answers = document.querySelectorAll(
+		'[data-testid="answer"], [data-testid*="answer"], [data-testid="final-answer"], [data-testid*="response"]'
+	);
+	if (queries.length || answers.length) {
+		const max = Math.max(queries.length, answers.length);
+		for (let i = 0; i < max; i++) {
+			const queryText = clean(queries[i]?.innerText || '');
+			const answerText = clean(answers[i]?.innerText || '');
+			if (queryText) messages.push({ role: 'user', text: queryText });
+			if (answerText) messages.push({ role: 'assistant', text: answerText });
+		}
+		if (messages.length > 0) return messages;
+	}
+
+	// Perplexity common utility-class layout fallback
+	const utilityBlocks = document.querySelectorAll('div[class*="col-span"][class*="pb-"]');
+	for (const block of utilityBlocks) {
+		const queryEl = block.querySelector('[data-testid*="query"], p.break-words, h1, h2, h3');
+		const answerEl = block.querySelector('[data-testid*="answer"], [data-testid*="response"], .prose');
+		const queryText = clean(queryEl?.innerText || '');
+		const answerText = clean(answerEl?.innerText || '');
+		if (queryText) messages.push({ role: 'user', text: queryText });
+		if (answerText) messages.push({ role: 'assistant', text: answerText });
+	}
+	if (messages.length > 0) return messages;
+
+	// Perplexity can render Q/A in generic containers; infer from local prose + heading
+	const possibleBlocks = document.querySelectorAll('main article, main section, main div');
+	for (const block of possibleBlocks) {
+		const answerEl = block.querySelector('.prose');
+		if (!answerEl) continue;
+		const answerText = clean(answerEl.innerText);
+		if (!answerText) continue;
+
+		const queryEl = block.querySelector('h1, h2, [data-testid="query"], p.break-words');
+		const queryText = clean(queryEl?.innerText || '');
+		if (queryText) messages.push({ role: 'user', text: queryText });
+		messages.push({ role: 'assistant', text: answerText });
+	}
+	if (messages.length > 0) return messages;
+
+	const proseBlocks = document.querySelectorAll('.prose');
+	proseBlocks.forEach((el) => {
+		const text = clean(el.innerText);
+		if (text) messages.push({ role: 'assistant', text });
 	});
-	return messages.filter((m) => m.text);
+	return messages;
 }
 
 function identify() {
@@ -78,21 +206,52 @@ function identify() {
 
 	switch (source) {
 		case 'chatgpt':
-			return { source, scraper: scrapeChatGPT };
+			return { source, extractor: extractChatGPT, waitSelector: '[data-message-author-role], article[class*="group/turn-messages"]' };
 		case 'claude':
-			return { source, scraper: scrapeClaude };
+			return {
+				source,
+				extractor: extractClaude,
+				waitSelector:
+					'[data-testid="human-turn"], [data-testid="ai-turn"], [data-testid="user-message"], [data-testid="assistant-message"], div[contenteditable="true"][data-testid], div[contenteditable="true"].ProseMirror',
+			};
 		case 'perplexity':
-			return { source, scraper: scrapePerplexity };
+			return {
+				source,
+				extractor: extractPerplexity,
+				waitSelector:
+					'[data-testid="qa-block"], [data-testid*="query"], [data-testid*="answer"], [data-testid*="response"], main .prose, .prose, div[class*="col-span"][class*="pb-"]',
+			};
 		case 'gemini':
-			return { source, scraper: scrapeGemini };
+			return { source, extractor: extractGemini, waitSelector: 'chat-turn, user-query, model-response' };
 		default:
 			return null;
 	}
 }
 
-function buildConversation(source, messages) {
+async function scrape() {
+	const info = identify();
+	if (!info) throw new Error('Unsupported site');
+	let waitTimeout = 5000;
+	if (info.source === 'perplexity') waitTimeout = 12000;
+	if (info.source === 'claude') waitTimeout = 8000;
+	try {
+		if (info.waitSelector) {
+			await waitForContent(info.waitSelector, waitTimeout);
+		}
+	} catch (e) {
+		// proceed; maybe content already present
+	}
+	let messages = info.extractor();
+	if (!messages.length && info.source === 'perplexity') {
+		for (let i = 0; i < 4; i++) {
+			await sleep(800);
+			messages = info.extractor();
+			if (messages.length) break;
+		}
+	}
+	if (!messages.length) throw new Error('No messages found');
 	return {
-		source,
+		source: info.source,
 		url: location.href,
 		capturedAt: new Date().toISOString(),
 		messages,
@@ -101,17 +260,12 @@ function buildConversation(source, messages) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	if (message?.type === 'SCRAPE_CONVERSATION') {
-		try {
-			const info = identify();
-			if (!info) throw new Error('Unsupported site');
-			const messages = info.scraper();
-			if (!messages.length) throw new Error('No messages found');
-			const conversation = buildConversation(info.source, messages);
-			sendResponse({ ok: true, conversation });
-		} catch (err) {
-			console.error('Scrape failed', err);
-			sendResponse({ ok: false, error: err.message });
-		}
+		scrape()
+			.then((conversation) => sendResponse({ ok: true, conversation }))
+			.catch((err) => {
+				console.error('Scrape failed', err);
+				sendResponse({ ok: false, error: err.message });
+			});
 		return true;
 	}
 });

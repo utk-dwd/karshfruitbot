@@ -3,12 +3,13 @@
 const { Telegraf } = require('telegraf');
 const { telegramToken } = require('./config/env');
 const { registerKarshfruit } = require('./bots/karshfruit/karshfruitBot');
+const { registerBrowserLink } = require('./services/chatLinkRegistry');
 
 function createBot() {
   const bot = new Telegraf(telegramToken);
 
   // Register feature modules here.
-  registerKarshfruit(bot);
+  registerKarshfruit(bot, { registerBrowserLink });
   // Future: registerOtherFeature(bot);
 
   // Global error handler

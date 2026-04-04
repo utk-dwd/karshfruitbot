@@ -1,7 +1,7 @@
 // background.js - MV3 service worker for karshfruitbot exporter
 
-const DEFAULT_EXTENSION_API_URL = 'http://localhost:8787/api/extension/send';
-const FALLBACK_EXTENSION_API_URL = 'http://127.0.0.1:8787/api/extension/send';
+const DEFAULT_EXTENSION_API_URL = 'https://karshfruitbot-production.up.railway.app/api/extension/send';
+const FALLBACK_EXTENSION_API_URL = 'https://karshfruitbot-production.up.railway.app/api/extension/send';
 
 function buildLinkStatusUrl(sendUrl, browserSessionId) {
   const base = new URL(sendUrl);
@@ -11,8 +11,7 @@ function buildLinkStatusUrl(sendUrl, browserSessionId) {
 }
 
 async function getApiUrl() {
-  const { EXTENSION_API_URL = DEFAULT_EXTENSION_API_URL } = await chrome.storage.sync.get(['EXTENSION_API_URL']);
-  return EXTENSION_API_URL || DEFAULT_EXTENSION_API_URL;
+  return DEFAULT_EXTENSION_API_URL;
 }
 
 async function hasOriginPermission(url) {
@@ -105,7 +104,7 @@ async function handleSend({ format, content, fileName, browserSessionId, chatId 
   const message = String(lastError?.message || 'Failed to reach local server');
   if (message.includes('Failed to fetch')) {
     throw new Error(
-      `Cannot reach local API. Ensure backend is running and extension API is available at ${endpoint} (or ${FALLBACK_EXTENSION_API_URL}), then reload extension.`
+      `Cannot reach backend API at ${endpoint}. Ensure Railway service is up and extension host permissions are updated, then reload extension.`
     );
   }
 

@@ -8,6 +8,40 @@ function sleep(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function hasAssistantMarkers(el) {
+	const testId = (el.getAttribute('data-testid') || '').toLowerCase();
+	const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+	const className = String(el.className || '').toLowerCase();
+	return (
+		testId.includes('assistant') ||
+		testId.includes('ai-turn') ||
+		testId.includes('claude') ||
+		ariaLabel.includes('assistant') ||
+		ariaLabel.includes('claude') ||
+		className.includes('assistant')
+	);
+}
+
+function hasUserMarkers(el) {
+	const testId = (el.getAttribute('data-testid') || '').toLowerCase();
+	const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+	const className = String(el.className || '').toLowerCase();
+	return (
+		testId.includes('human') ||
+		testId.includes('user') ||
+		testId.includes('you-turn') ||
+		ariaLabel.includes('user') ||
+		ariaLabel.includes('you') ||
+		className.includes('user')
+	);
+}
+
+function extractClaudeText(el) {
+	const contentNode =
+		el.querySelector('[data-testid*="message-content"], [data-testid*="response"], .prose, .markdown, p') || el;
+	return clean(contentNode.innerText || el.innerText || '');
+}
+
 const HOST_SOURCE_MAP = {
 	'chatgpt.com': 'chatgpt',
 	'chat.openai.com': 'chatgpt',
@@ -100,9 +134,29 @@ function extractClaude() {
 	});
 
 	directTurns.forEach(({ role, el }) => {
-		const text = clean(el.innerText);
+		const text = extractClaudeText(el);
 		if (text) messages.push({ role, text });
 	});
+
+	if (messages.length > 0 && messages.some((m) => m.role === 'assistant')) return messages;
+
+	// Broad fallback for newer Claude DOMs with changed testids/classes
+	const genericCandidates = document.querySelectorAll(
+		'[data-testid*="turn"], [data-testid*="message"], [data-testid*="response"], article, section'
+	);
+	const seen = new Set();
+	for (const el of genericCandidates) {
+		const text = extractClaudeText(el);
+		if (!text || text.length < 2) continue;
+
+		const role = hasAssistantMarkers(el) ? 'assistant' : hasUserMarkers(el) ? 'user' : null;
+		if (!role) continue;
+
+		const key = `${role}:${text}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		messages.push({ role, text });
+	}
 
 	return messages;
 }
@@ -247,6 +301,13 @@ async function scrape() {
 			await sleep(800);
 			messages = info.extractor();
 			if (messages.length) break;
+		}
+	}
+	if (!messages.length && info.source === 'claude') {
+		for (let i = 0; i < 5; i++) {
+			await sleep(700);
+			messages = info.extractor();
+			if (messages.length && messages.some((m) => m.role === 'assistant')) break;
 		}
 	}
 	if (!messages.length) throw new Error('No messages found');
